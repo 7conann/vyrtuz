@@ -33,9 +33,14 @@ export function ScrollExperience() {
         gsap.fromTo(element, { yPercent: -7, scale: 1.13 }, { yPercent: 7, ease: 'none', scrollTrigger: { trigger: element.parentElement, start: 'top bottom', end: 'bottom top', scrub: true } })
       })
       gsap.fromTo('.business-image', { clipPath: 'inset(12% 12% 12% 12% round 40px)' }, { clipPath: 'inset(0% 0% 0% 0% round 20px)', ease: 'none', scrollTrigger: { trigger: '.business-image', start: 'top 90%', end: 'center center', scrub: true } })
-      gsap.utils.toArray<HTMLElement>('.manifesto-word').forEach((word, index) => {
-        gsap.fromTo(word, { opacity: 0.2 }, { opacity: 1, scrollTrigger: { trigger: '.manifesto', start: `top ${80 - index * 2}%`, end: `top ${62 - index * 2}%`, scrub: true } })
-      })
+      const words = gsap.utils.toArray<HTMLElement>('.manifesto-word')
+      // Preserve each word's 18vh fade and 2vh offset with one scroll observer.
+      if (words.length) {
+        gsap.fromTo(words, { opacity: 0.2 }, {
+          opacity: 1, duration: 0.18, stagger: 0.02,
+          scrollTrigger: { trigger: '.manifesto', start: 'top 80%', end: `top ${62 - (words.length - 1) * 2}%`, scrub: true },
+        })
+      }
       return () => {
         if (tick) gsap.ticker.remove(tick)
         lenis?.destroy()
@@ -51,15 +56,38 @@ export function ScrollExperience() {
       gsap.to(track, { x: () => -distance(), ease: 'none', scrollTrigger: { id: 'solutions', refreshPriority: 1, trigger: '.solutions-section', pin: '.solutions-pin', start: 'top 85px', end: () => `+=${distance()}`, scrub: 0.65, invalidateOnRefresh: true } })
     })
 
-    const refresh = () => { ScrollTrigger.sort(); ScrollTrigger.refresh() }
+    let disposed = false
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    const refresh = () => {
+      if (disposed) return
+      clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(() => {
+        ScrollTrigger.sort()
+        ScrollTrigger.refresh()
+      }, 100)
+    }
     document.fonts.ready.then(refresh)
     window.addEventListener('load', refresh)
-    const observer = new ResizeObserver(() => ScrollTrigger.refresh())
+    const sizes = new WeakMap<Element, { width: number; height: number }>()
+    const observer = new ResizeObserver(entries => {
+      let changed = false
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect
+        const previous = sizes.get(entry.target)
+        if (!previous || Math.abs(previous.width - width) > 0.5 || Math.abs(previous.height - height) > 0.5) {
+          sizes.set(entry.target, { width, height })
+          changed = true
+        }
+      }
+      if (changed) refresh()
+    })
     document.querySelectorAll('main, .hero-product, .business-image').forEach(el => observer.observe(el))
     return () => {
-      media.revert()
+      disposed = true
+      clearTimeout(refreshTimer)
       observer.disconnect()
       window.removeEventListener('load', refresh)
+      media.revert()
     }
   }, [])
   return null
